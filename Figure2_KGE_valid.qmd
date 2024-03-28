@@ -1,0 +1,90 @@
+```{r}
+source("main_pkgs.R")
+
+shp_data <- sf::st_read("shp/GSIM+China select.shp")
+worldshp <- sf::st_read("shp/global map.shp")
+
+# prj <- sp::CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
+# st_crs(shp_data) <- prj
+# st_crs(worldshp) <- prj
+# shp_data[,5:12] <- NA
+load("data/kgecallist.RData")
+load("data/kgeevallist.RData")
+
+load("data/nsecallist.RData")
+load("data/nseevallist.RData")
+
+load("data/multimodel7 kge.RData")
+load("data/multimodel7 nse.RData")
+
+st_all <- fread("data/GSIM_catchment_characteristics.csv")
+I <- match2(toupper(shp_data$FILENAME), toupper(st_all$gsim.no))
+
+st <- st_all[I$I_y, .(lon = long.org, lat = lat.org)]
+shp <- shp_data[I$I_x, ]
+```
+
+```{r}
+n <- 10
+d_lab <- tribble(
+  ~model, ~model_level,
+  "alpine", "Alpine",
+  "GR2M", "GR2M",
+  "XAJ", "XAJ",
+  "sac", "SAC",
+  "RF", "RF",
+  "GBDT", "GBDT",
+  "DNN", "DNN",
+  "CNN", "CNN",
+  "CLS", "CLS",
+  "InvW", "InvW"
+) |> mutate(
+  model = factor(model, model),
+  model_level = sprintf("\\(%s\\) %s", letters[1:n], model_level)
+)
+
+models <- d_lab$model |> as.character()
+.models <- models[1:8]
+
+# models <- c("alpine", "GR2M", "XAJ", "sac", "RF", "GBDT", "DNN", "CNN", "CLS", "InvW")
+# models_lev <- c("Alpine", "GR2M", "XAJ", "sac", "RF", "GBDT", "DNN", "CNN", "CLS", "InvW")
+cal_anorm <- \(d) d - rowMedians(as.matrix(d), na.rm = TRUE)
+
+tidy_input <- function(df_all) {
+  cbind(st, df_all[I$I_x, ]) |>
+    melt(c("lon", "lat"), variable.name = "model") |>
+    mutate(model = factor(model, models))
+}
+
+df_all <- data.table(kgeevallist) %>% setnames(., models)
+
+HMs <- df_all[, 1:4] |> cal_anorm()
+MLMs <- df_all[, 5:8] |> cal_anorm()
+
+df_all.anorm <- cbind(HMs, MLMs)
+
+dat <- tidy_input(df_all)
+dat.anorm <- tidy_input(df_all.anorm)
+```
+
+## Figure1_KGE_valid
+
+```{r}
+brks <- c(-Inf, 0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, Inf)
+pdat <- dat[model %in% .models]
+
+p <- plot_spatial(pdat, brks, mid.grey = FALSE)
+write_fig(p, "Figure1_KGE_valid_V1.pdf", 12, 10)
+```
+
+## Figure2_KGE_anorm
+
+```{r}
+source("main_pkgs.R")
+
+brks <- c(0.05, 0.1, 0.2, Inf) %>% c(-rev(.), 0, .)
+pdat <- dat.anorm[model %in% .models]
+
+p <- plot_spatial(pdat, brks, mid.grey = TRUE)
+write_fig(p, "Figure2_KGE_valid_anorm_0.05.pdf", 12, 10)
+```
